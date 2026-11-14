@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ISL to Audio</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 16px; }
+    h1 { font-size: 20px; margin-bottom: 12px; color: #38bdf8; }
+    .controls { display: flex; gap: 10px; margin-bottom: 12px; width: 100%; max-width: 420px; }
+    button, select { flex: 1; padding: 12px; font-size: 15px; font-weight: 600; border-radius: 10px; border: none; }
+    #startBtn { background: #22c55e; color: #052e16; cursor: pointer; }
+    #langSelect { background: #1e293b; color: #f8fafc; border: 1px solid #334155; }
+    .camera-box { position: relative; width: 100%; max-width: 420px; aspect-ratio: 3/4; background: #000; border-radius: 16px; overflow: hidden; border: 2px solid #334155; }
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .result-card { width: 100%; max-width: 420px; background: #1e293b; border-radius: 14px; padding: 16px; margin-top: 14px; text-align: center; border: 1px solid #334155; }
+    #detectedText { font-size: 28px; font-weight: 700; color: #4ade80; min-height: 36px; }
+    #statusText { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>ISL to Audio Translator</h1>
+
+  <div class="controls">
+    <button id="startBtn">Start Camera</button>
+    <select id="langSelect">
+      <option value="en-IN">English (India)</option>
+      <option value="hi-IN">Hindi (हिंदी)</option>
+    </select>
+  </div>
+
+  <div class="camera-box">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="result-card">
+    <div id="detectedText">Tap "Start Camera"</div>
+    <div id="statusText">Hold sign steady for 1 second</div>
+  </div>
+
+  <script type="module">
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const detectedText = document.getElementById("detectedText");
+    const statusText = document.getElementById("statusText");
+    const startBtn = document.getElementById("startBtn");
+    const langSelect = document.getElementById("langSelect");
+
+    let handLandmarker;
+    let lastCandidate = "";
+    let holdFrames = 0;
+    let lastSpoken = "";
+    let lastSpokenTime = 0;
+
+    // Translations for Hindi mode
+    const hindiMap = {
+      "Hello": "नमस्ते",
+      "Thank You": "धन्यवाद",
+      "Help": "मदद चाहिए",
+      "Yes": "हाँ",
+      "No": "नहीं",
+      "Water": "पानी",
+      "Good": "अच्छा",
+      "I Love You": "मैं तुमसे प्यार करता हूँ",
+      "Number 1": "एक",
+      "Number 2": "दो",
+      "Number 3": "तीन",
+      "Number 4": "चार",
+      "Number 5": "पाँच"
+    };
+
+    function speak(englishLabel) {
+      const now = Date.now();
+      if (englishLabel === lastSpoken && now - lastSpokenTime < 3000) return;
+      lastSpoken = englishLabel;
+      lastSpokenTime = now;
+
+      const lang = langSelect.value;
+      const textToSpeak = lang === "hi-IN" ? (hindiMap[englishLabel] || englishLabel) : englishLabel;
+      detectedText.innerText = textToSpeak;
+
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = lang;
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // Distance helper
+    function dist(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    // ISL Gesture Recognition (1-hand & 2-hand)
+    function recognizeISL(allLandmarks) {
+      // Two-hand ISL signs
+      if (allLandmarks.length === 2) {
+        const h1 = allLandmarks[0];
+        const h2 = allLandmarks[1];
+        // Both palms close together -> Namaste / Thank You
+        if (dist(h1[9], h2[9]) < 0.14 && dist(h1[8], h2[8]) < 0.12) {
+          return "Thank You";
+        }
+      }
+
+      // Single-hand ISL signs & digits
+      const lm = allLandmarks[0];
+      const thumbOpen = dist(lm[4], lm[17]) > dist(lm[3], lm[17]) + 0.03;
+      const indexOpen = lm[8].y < lm[6].y;
+      const middleOpen = lm[12].y < lm[10].y;
+      const ringOpen = lm[16].y < lm[14].y;
+      const pinkyOpen = lm[20].y < lm[18].y;
+
+      // OK / Water / Good sign (Thumb & index touching, other 3 open)
+      if (dist(lm[4], lm[8]) < 0.05 && middleOpen && ringOpen && pinkyOpen) return "Water";
+
+      // Thumbs up -> Good / Yes
+      if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen && lm[4].y < lm[2].y) return "Good";
+
+      // Closed fist -> Help
+      if (!thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen) return "Help";
+
+      // I Love You sign
+      if (thumbOpen && indexOpen && !middleOpen && !ringOpen && pinkyOpen) return "I Love You";
+
+      // Numbers 1 to 5
+      if (!thumbOpen && indexOpen && !middleOpen && !ringOpen && !pinkyOpen) return "Number 1";
+      if (!thumbOpen && indexOpen && middleOpen && !ringOpen && !pinkyOpen) return "Number 2";
+      if (!thumbOpen && indexOpen && middleOpen && ringOpen && !pinkyOpen) return "Number 3";
+      if (!thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) return "Number 4";
+      if (thumbOpen && indexOpen && middleOpen && ringOpen && pinkyOpen) return "Hello";
+
+      return null;
+    }
+
+    async function startApp() {
+      startBtn.disabled = true;
+      startBtn.innerText = "Loading AI...";
+      statusText.innerText = "Initializing MediaPipe on iPhone...";
+
+      // Unlock iOS Safari speech engine on user tap
+      const unlock = new SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(unlock);
+
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 2
+      });
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        startBtn.innerText = "Running";
+        statusText.innerText = "Show an ISL sign to the camera";
+        detectedText.innerText = "Ready";
+        detectLoop();
+      };
+    }
+
+    const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+    function detectLoop() {
+      if (video.readyState >= 2) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const results = handLandmarker.detectForVideo(video, performance.now());
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          // Draw hand skeleton
+          for (const lm of results.landmarks) {
+            ctx.strokeStyle = "#38bdf8";
+            ctx.lineWidth = 3;
+            for (const [s, e] of CONNECTIONS) {
+              ctx.beginPath();
+              ctx.moveTo(lm[s].x * canvas.width, lm[s].y * canvas.height);
+              ctx.lineTo(lm[e].x * canvas.width, lm[e].y * canvas.height);
+              ctx.stroke();
+            }
+            ctx.fillStyle = "#4ade80";
+            for (const pt of lm) {
+              ctx.beginPath();
+      
