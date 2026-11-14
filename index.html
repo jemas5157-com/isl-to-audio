@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ISL Voice AI" />
+    <title>ISL Voice AI — 1.73s Floating Labels Engine</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg: #070b14;
+            --card: rgba(17, 25, 40, 0.88);
+            --border: rgba(56, 189, 248, 0.25);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.35);
+            --green: #22c55e;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background: radial-gradient(circle at top, #0f1c36 0%, var(--bg) 65%);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px 14px 32px;
+        }
+
+        header {
+            width: 100%;
+            max-width: 430px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .logo-dot {
+            width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+            box-shadow: 0 0 12px var(--accent); animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.6; } }
+
+        h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
+        .badge {
+            font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+            background: rgba(56, 189, 248, 0.15); border: 1px solid var(--border); color: var(--accent);
+        }
+
+        .camera-card {
+            position: relative; width: 100%; max-width: 430px; aspect-ratio: 3/4;
+            background: #0b1120; border-radius: 24px; overflow: hidden;
+            border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+        }
+
+        video, canvas {
+            position: absolute; inset: 0; width: 100%; height: 100%;
+            object-fit: cover; transform: scaleX(-1);
+        }
+
+        .hud-overlay {
+            position: absolute; top: 12px; left: 12px; right: 12px;
+            display: flex; justify-content: space-between; align-items: center; z-index: 5;
+        }
+
+        .status-pill {
+            background: rgba(7, 11, 20, 0.78); backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; gap: 6px;
+        }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+        .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+        .orientation-hud {
+            position: absolute; bottom: 12px; left: 12px; right: 12px;
+            background: rgba(7, 11, 20, 0.8); backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 14px; padding: 8px 12px;
+            display: flex; justify-content: space-around; font-size: 11px; font-weight: 600;
+            z-index: 5;
+        }
+
+        .ori-item span { color: var(--accent); }
+
+        .controls-bar {
+            width: 100%; max-width: 430px; display: flex; gap: 10px; margin-top: 14px;
+        }
+
+        button {
+            border: none; border-radius: 14px; font-size: 15px; font-weight: 600;
+            padding: 14px 16px; cursor: pointer; transition: transform 0.15s ease; flex: 1;
+        }
+
+        button:active { transform: scale(0.97); }
+
+        #startBtn {
+            flex: 2; background: linear-gradient(135deg, #0284c7, #38bdf8);
+            color: #04101d; box-shadow: 0 8px 24px var(--accent-glow);
+        }
+
+        #muteBtn { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+
+        .result-card {
+            width: 100%; max-width: 430px; background: var(--card); backdrop-filter: blur(16px);
+            border: 1px solid var(--border); border-radius: 20px; padding: 18px;
+            margin-top: 14px; text-align: center;
+        }
+
+        .label-small {
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+            color: var(--muted); margin-bottom: 6px;
+        }
+
+        #translationText {
+            font-size: 28px; font-weight: 800; color: var(--accent);
+            min-height: 36px; text-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .hold-bar-bg {
+            width: 100%; height: 6px; background: rgba(255,255,255,0.08);
+            border-radius: 999px; margin-top: 12px; overflow: hidden;
+        }
+
+        #holdBarFill {
+            width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, #22c55e);
+            transition: width 0.05s linear;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <div class="logo-dot"></div>
+            <h1>ISL Voice AI</h1>
+        </div>
+        <div class="badge">1.73S FLOATING LABELS</div>
+    </header>
+
+    <div class="camera-card">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output_canvas"></canvas>
+        <div class="hud-overlay">
+            <div class="status-pill">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusLabel">Camera Off</span>
+            </div>
+            <div class="status-pill" id="fpsBadge">0 FPS</div>
+        </div>
+        <div class="orientation-hud">
+            <div class="ori-item">Pose: <span id="oriPose">--</span></div>
+            <div class="ori-item">Facing: <span id="oriFacing">--</span></div>
+            <div class="ori-item">Tilt: <span id="oriTilt">--</span></div>
+        </div>
+    </div>
+
+    <div class="controls-bar">
+        <button id="startBtn">Start Camera</button>
+        <button id="muteBtn">🔊 Voice On</button>
+    </div>
+
+    <div class="result-card">
+        <div class="label-small">Detected Indian Sign Language</div>
+        <div id="translationText">Ready</div>
+        <div class="hold-bar-bg">
+            <div id="holdBarFill"></div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('output_canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const muteBtn = document.getElementById('muteBtn');
+        const translationText = document.getElementById('translationText');
+        const holdBarFill = document.getElementById('holdBarFill');
+        const statusDot = document.getElementById('statusDot');
+        const statusLabel = document.getElementById('statusLabel');
+        const fpsBadge = document.getElementById('fpsBadge');
+
+        const oriPose = document.getElementById('oriPose');
+        const oriFacing = document.getElementById('oriFacing');
+        const oriTilt = document.getElementById('oriTilt');
+
+        let isRunning = false;
+        let isMuted = false;
+        let currentCandidate = "";
+        let candidateStartTime = 0;
+        // Exactly 1.73 seconds hold delay
+        const REQUIRED_HOLD_MS = 1730; 
+        let lastSpoken = "";
+        let lastFrameTime = performance.now();
+
+        muteBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            muteBtn.innerText = isMuted ? "🔇 Muted" : "🔊 Voice On";
+            if (isMuted) window.speechSynthesis.cancel();
+        });
+
+        function speak(text) {
+            if (isMuted || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.lang = 'en-IN';
+            msg.rate = 1.0;
+            window.speechSynthesis.speak(msg);
+        }
+
+        function dist3D(p1, p2) {
+            return Math.hypot(p1.x - p2.x, p1.y - p2.y, (p1.z - p2.z) * 1.5);
+        }
+
+        function analyzeHand3D(lm, handedness) {
+            const wrist = lm[0];
+            const indexMcp = lm[5];
+            const middleMcp = lm[9];
+            const pinkyMcp = lm[17];
+
+            const isSeedha = wrist.y > middleMcp.y + 0.03;
+            const isUlta = middleMcp.y > wrist.y + 0.03;
+            const poseLabel = isSeedha ? "Seedha" : (isUlta ? "Ulta" : "Sideways");
+
+            const dx = middleMcp.x - wrist.x;
+            const dy = wrist.y - middleMcp.y;
+            const angleDeg = Math.round(Math.atan2(dx, dy) * (180 / Math.PI));
+            let tiltLabel = "Center";
+            if (angleDeg > 22) tiltLabel = "Left Tilt";
+            else if (angleDeg < -22) tiltLabel = "Right Tilt";
+
+            const v1x = indexMcp.x - wrist.x; const v1y = indexMcp.y - wrist.y;
+            const v2x = pinkyMcp.x - wrist.x; const v2y = pinkyMcp.y - wrist.y;
+            const crossZ = v1x * v2y - v1y * v2x;
+            const isPalmFront = handedness === 'Right' ? crossZ < 0 : crossZ > 0;
+            const facingLabel = isPalmFront ? "Aage (Front)" : "Peeche (Back)";
+
+            const tipToWrist = (p) => dist3D(p, wrist);
+            const mcpToWrist = (p) => dist3D(p, wrist);
+
+            const thumbOpen = dist3D(lm[4], pinkyMcp) > dist3D(lm[3], pinkyMcp) * 1.1;
+            const indexOpen = tipToWrist(lm[8]) > mcpToWrist(lm[6]) * 1.15;
+            const middleOpen = tipToWrist(lm[12]) > mcpToWrist(lm[10]) * 1.15;
+            const ringOpen = tipToWrist(lm[16]) > mcpToWrist(lm[14]) * 1.15;
+            const pinkyOpen = tipToWrist(lm[20]) > mcpToWrist(lm[18]) * 1.15;
+
+            return {
+                isSeedha, isUlta, poseLabel, tiltLabel, facingLabel,
+                thumbOpen, indexOpen, middleOpen, ringOpen, pinkyOpen,
+                wrist, indexTip: lm[8], thumbTip: lm[4], pinkyTip: lm[20], middleTip: lm[12]
+            };
+        }
+
+        function classifyGesture(handsList) {
+            if (handsList.length === 0) return "";
+
+            if (handsList.length === 2) {
+                const h1 = handsList[0];
+                const h2 = handsList[1];
+                const wristDist = dist3D(h1.wrist, h2.wrist);
+                const indexTipDist = dist3D(h1.indexTip, h2.indexTip);
+                const middleDist = dist3D(h1.middleTip, h2.middleTip);
+                const thumbTipDist = dist3D(h1.thumbTip, h2.thumbTip);
+
+                if (wristDist < 0.38 && indexTipDist < 0.20 && middleDist < 0.22) return "Namaste";
+                if (indexTipDist < 0.15 && thumbTipDist < 0.18 && wristDist > 0.15) return "I Love You";
+                if (h1.indexOpen && h1.middleOpen && h2.indexOpen && h2.middleOpen && wristDist >= 0.28) return "Stop / Danger";
+                if (wristDist < 0.3 && h1.isSeedha && h2.isSeedha) return "Friends";
+                if (wristDist < 0.25 && indexTipDist < 0.12) return "Please / Sorry";
+            }
+
+            const h = handsList[0];
+
+            if (h.isSeedha && h.thumbOpen && h.indexOpen && h.middleOpen && h.ringOpen && h.pinkyOpen) return "Hello";
+            if (h.isSeedha && !h.thumbOpen && h.indexOpen && h.middleOpen && h.ringOpen && h.pinkyOpen) return "Water Please";
+            if (!h.thumbOpen && !h.indexOpen && !h.middleOpen && !h.ringOpen && !h.pinkyOpen) return "Help Me";
+            if (h.thumbOpen && !h.indexOpen && !h.middleOpen && !h.ringOpen && !h.pinkyOpen && h.thumbTip.y < h.wrist.y - 0.05) return "Yes, Good";
+            if (h.thumbOpen && !h.indexOpen && !h.middleOpen && !h.ringOpen && !h.pinkyOpen && h.thumbTip.y > h.wrist.y + 0.05) return "No / Bad";
+            if (h.isSeedha && h.indexOpen && h.middleOpen && !h.ringOpen && !h.pinkyOpen) return "Thank You";
+            if (h.isSeedha && h.indexOpen && !h.middleOpen && !h.ringOpen && !h.pinkyOpen) return "Please Wait";
+            if (h.thumbOpen && h.indexOpen && !h.middleOpen && !h.ringOpen && h.pinkyOpen) return "Rock On";
+            if (h.thumbOpen && !h.indexOpen && !h.middleOpen && !h.ringOpen && h.pinkyOpen) return "Call Me";
+            if (dist3D(h.thumbTip, h.indexTip) < 0.06 && h.middleOpen && h.ringOpen) return "Okay";
+            if (dist3D(h.thumbTip, h.indexTip) < 0.05) return "Perfect";
+            if (h.indexOpen && !h.middleOpen && !h.ringOpen) return "One";
+            if (h.indexOpen && h.middleOpen && !h.ringOpen) return "Two";
+            if (h.indexOpen && h.middleOpen && h.ringOpen && !h.pinkyOpen) return "Three";
+            if (h.indexOpen && h.middleOpen && h.ringOpen && h.pinkyOpen && !h.thumbOpen) return "Four";
+            if (h.thumbOpen && h.indexOpen && h.middleOpen && h.ringOpen && h.pinkyOpen) return "Five";
+            if (h.isSeedha && h.indexOpen && h.middleOpen && h.tiltLabel === "Center") return "Victory";
+
+            return "";
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults((results) => {
+            const now = performance.now();
+            const fps = Math.round(1000 / Math.max(1, now - lastFrameTime));
+            lastFrameTime = now;
+            fpsBadge.innerText = `${fps} FPS`;
+
+            if (video.videoWidth && canvas.width !== video.videoWidth) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
+
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const analyzedHands = [];
+
+                results.multiHandLandmarks.forEach((lm, idx) => {
+                    const rawHand = results.multiHandedness?.[idx]?.label || 'Right';
+                    const trueHand = rawHand === 'Left' ? 'Right' : 'Left';
+
+                    const lineColor = idx === 0 ? '#38bdf8' : '#a855f7';
+                    // Wireframe skeleton only (no tracking dots)
+                    drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: lineColor, lineWidth: 3 });
+
+                    analyzedHands.push(analyzeHand3D(lm, trueHand));
+                });
+
+                oriPose.innerText = analyzedHands[0].poseLabel;
+                oriFacing.innerText = analyzedHands[0].facingLabel;
+                oriTilt.innerText = analyzedHands[0].tiltLabel;
+
+                const detectedSign = classifyGesture(analyzedHands);
+                const currentTime = performance.now();
+
+                // Render medium-sized floating label directly above the hand on the canvas
+                if (detectedSign && results.multiHandLandmarks[0]) {
+                    const handLm = results.multiHandLandmarks[0];
+                    const wristX = handLm[0].x * canvas.width;
+                    const wristY = handLm[0].y * canvas.height;
+
+                    ctx.save();
+                    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, sans-serif';
+                    ctx.textAlign = 'center';
+                    
+                    // Background pill for readability
+                    const textWidth = ctx.measureText(detectedSign).width;
+                    ctx.fillStyle = 'rgba(7, 11, 20, 0.85)';
+                    ctx.beginPath();
+                    ctx.roundRect(wristX - textWidth / 2 - 12, wristY - 55, textWidth + 24, 32, 8);
+                    ctx.fill();
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Text color
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillText(detectedSign, wristX, wristY - 33);
+                    ctx.restore();
+                }
+
+                if (detectedSign) {
+                    if (detectedSign === currentCandidate) {
+                        const elapsed = currentTime - candidateStartTime;
+                        const pct = Math.min(100, Math.round((elapsed / REQUIRED_HOLD_MS) * 100));
+                        holdBarFill.style.width = pct + "%";
+
+                        if (elapsed >= REQUIRED_HOLD_MS) {
+                            translationText.innerText = detectedSign;
+                            if (lastSpoken !== detectedSign) {
+                                speak(detectedSign);
+                                lastSpoken = detectedSign;
+                            }
+                        }
+                    } else {
+                        currentCandidate = detectedSign;
+                        candidateStartTime = currentTime;
+                        holdBarFill.style.width = "0%";
+                    }
+                } else {
+                    currentCandidate = "";
+                    candidateStartTime = 0;
+                    holdBarFill.style.width = "0%";
+                }
+            } else {
+                oriPose.innerText = "--";
+                oriFacing.innerText = "--";
+                oriTilt.innerText = "--";
+                currentCandidate = "";
+                candidateStartTime = 0;
+                holdBarFill.style.width = "0%";
+                translationText.innerText = "Show Hand";
+            }
+            ctx.restore();
+        });
+
+        async function processLoop() {
+            if (!isRunning) return;
+            if (video.readyState >= 2) {
+                await hands.send({ image: video });
+            }
+            requestAnimationFrame(processLoop);
+        }
+
+        startBtn.addEventListener('click', async () => {
+            if (isRunning) return;
+            speak("System online");
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                await video.play();
+
+                isRunning = true;
+                statusDot.classList.add('live');
+                statusLabel.innerText = "1.73s Floating Live";
+                startBtn.innerText = "Running...";
+                startBtn.style.opacity = "0.7";
+                processLoop();
+            } catch (err) {
+                alert("Camera access error: " + err.message);
+            }
+        });
+    </script>
+</body>
+</html>
