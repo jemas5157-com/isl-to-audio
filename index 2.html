@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <title>ISL Translator — Multilingual Live Camera</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root { --bg:#000; --card:rgba(22,22,25,.85); --border:rgba(255,255,255,.15); --accent:#0a84ff; --accent-glow:rgba(10,132,255,.4); --green:#30d158; --text:#f5f5f7; --muted:#98989f; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: calc(16px + env(safe-area-inset-top)) 14px calc(36px + env(safe-area-inset-bottom)); }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        header { width: 100%; max-width: 430px; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .back-link { color: var(--accent); text-decoration: none; font-size: 15px; font-weight: 500; }
+        .head-right { display: flex; align-items: center; gap: 8px; }
+        .badge { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(10,132,255,.15); border: 1px solid rgba(10,132,255,.3); color: var(--accent); white-space: nowrap; }
+        #langSelect { background: rgba(255,255,255,.08); color: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
+
+        .camera-card { position: relative; width: 100%; max-width: 430px; aspect-ratio: 3/4; background: #111; border-radius: 28px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 25px 50px rgba(0,0,0,.7); }
+        video { display: none; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 30px; color: var(--muted); font-size: 15px; line-height: 1.5; z-index: 2; }
+        .placeholder.hidden { display: none; }
+        .hud-overlay { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: center; z-index: 5; }
+        .status-pill { background: rgba(0,0,0,.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,.1); display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff453a; }
+        .status-dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+        .controls-bar { width: 100%; max-width: 430px; display: flex; gap: 10px; margin-top: 14px; }
+        button { border: none; border-radius: 14px; font-size: 15px; font-weight: 600; padding: 14px 12px; cursor: pointer; transition: transform .15s ease; font-family: inherit; }
+        button:active { transform: scale(.97); }
+        #startBtn { flex: 3; background: var(--accent); color: #fff; box-shadow: 0 8px 24px var(--accent-glow); }
+        #startBtn.stop { background: #ff453a; box-shadow: 0 8px 24px rgba(255,69,58,.35); }
+        .sec-btn { flex: 1; background: rgba(255,255,255,.08); color: #fff; border: 1px solid var(--border); font-size: 18px; padding: 12px 0; }
+        .sec-btn.off { opacity: .45; }
+
+        .result-card { width: 100%; max-width: 430px; background: var(--card); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: 20px; padding: 18px; margin-top: 14px; text-align: center; }
+        .label-small { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 6px; }
+        #translationText { font-size: 28px; font-weight: 700; color: var(--accent); min-height: 36px; }
+        .hold-bar-bg { width: 100%; height: 5px; background: rgba(255,255,255,.1); border-radius: 999px; margin-top: 12px; overflow: hidden; }
+        #holdBarFill { width: 0%; height: 100%; background: linear-gradient(90deg, #0a84ff, #30d158); transition: width .05s linear; }
+        #notice { font-size: 12px; color: #ffd60a; margin-top: 10px; min-height: 0; line-height: 1.4; }
+
+        .history-card { width: 100%; max-width: 430px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 14px 16px; margin-top: 14px; }
+        .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .history-head button { background: none; color: var(--accent); font-size: 13px; padding: 4px 6px; }
+        #history { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; }
+        .chip { background: rgba(10,132,255,.15); border: 1px solid rgba(10,132,255,.3); color: #fff; border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+        .empty { color: var(--muted); font-size: 13px; }
+        .foot-link { margin-top: 18px; font-size: 14px; color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="index.html" class="back-link">← Home</a>
+        <div class="head-right">
+            <select id="langSelect" aria-label="Language">
+                <option value="en">English</option>
+                <option value="hi">हिंदी</option>
+                <option value="pa">ਪੰਜਾਬੀ</option>
+            </select>
+            <div class="badge" id="engineBadge">Rule engine</div>
+        </div>
+    </header>
+
+    <div class="camera-card">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output_canvas"></canvas>
+        <div class="placeholder" id="placeholder">Tap “Start Camera &amp; Audio”, then show a sign to the camera and hold it steady.</div>
+        <div class="hud-overlay">
+            <div class="status-pill"><div class="status-dot" id="statusDot"></div><span id="statusLabel">Camera Off</span></div>
+            <div class="status-pill" id="fpsBadge">0 FPS</div>
+        </div>
+    </div>
+
+    <div class="controls-bar">
+        <button id="startBtn">Start Camera &amp; Audio</button>
+        <button class="sec-btn" id="flipBtn" aria-label="Switch camera" title="Switch camera">🔄</button>
+        <button class="sec-btn" id="voiceBtn" aria-label="Toggle voice" title="Voice on/off">🔊</button>
+    </div>
+
+    <div class="result-card" aria-live="polite">
+        <div class="label-small">Active Audio Translation</div>
+        <div id="translationText">Ready</div>
+        <div class="hold-bar-bg"><div id="holdBarFill"></div></div>
+        <div id="notice"></div>
+    </div>
+
+    <div class="history-card">
+        <div class="history-head">
+            <div class="label-small" style="margin:0">Recent signs</div>
+            <button id="clearHistory">Clear</button>
+        </div>
+        <div id="history"><span class="empty">Nothing yet</span></div>
+    </div>
+
+    <a class="foot-link" href="train.html">Teach the AI new signs →</a>
+
+    <script src="isl-core.js"></script>
+    <script>
+        ISL.registerSW();
+
+        var $ = function (id) { return document.getElementById(id); };
+        var video = $('webcam'), canvas = $('output_canvas'), ctx = canvas.getContext('2d');
+        var startBtn = $('startBtn'), flipBtn = $('flipBtn'), voiceBtn = $('voiceBtn');
+        var translationText = $('translationText'), holdBarFill = $('holdBarFill');
+        var statusDot = $('statusDot'), statusLabel = $('statusLabel'), fpsBadge = $('fpsBadge');
+        var notice = $('notice'), historyEl = $('history');
+
+        /* ---------- settings ---------- */
+        var S = ISL.getSettings();
+        var qLang = new URLSearchParams(location.search).get('lang');
+        var currentLang = ISL.SPEECH_CODE[qLang] ? qLang : S.lang;
+        var voiceOn = S.voice;
+        var REQUIRED_HOLD_MS = S.hold;
+        $('langSelect').value = currentLang;
+        function paintVoiceBtn() { voiceBtn.textContent = voiceOn ? '🔊' : '🔇'; voiceBtn.classList.toggle('off', !voiceOn); }
+        paintVoiceBtn();
+
+        $('langSelect').addEventListener('change', function () {
+            currentLang = this.value; ISL.setSetting('lang', currentLang); checkVoice();
+        });
+        voiceBtn.addEventListener('click', function () {
+            voiceOn = !voiceOn; ISL.setSetting('voice', voiceOn ? 'on' : 'off'); paintVoiceBtn();
+            if (!voiceOn && 'speechSynthesis' in window) speechSynthesis.cancel();
+        });
+
+        function checkVoice() {
+            if (!voiceOn) { notice.textContent = ''; return; }
+            if (!('speechSynthesis' in window)) { notice.textContent = 'This browser cannot speak aloud. Text will still be shown.'; return; }
+            notice.textContent = ISL.hasVoiceFor(currentLang) ? '' : 'No voice for this language was found on your device, so the text is shown but may not be spoken. Install a voice in your phone’s Accessibility / Text-to-speech settings.';
+        }
+        if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', checkVoice);
+
+        /* ---------- model ---------- */
+        var model = null;
+        function setEngine() {
+            $('engineBadge').textContent = model ? 'Custom AI · ' + model.samples.length + ' samples' : 'Rule engine';
+        }
+        (async function loadModel() {
+            var m = ISL.loadModel();                       // trained on this phone
+            if (!m) m = await ISL.fetchModel('model.json'); // published with the site
+            model = (m && m.samples.length) ? m : null;
+            setEngine(); checkVoice();
+        })();
+
+        /* ---------- state ---------- */
+        var isRunning = false, stream = null, facing = 'user', mirror = true;
+        var currentCandidate = '', candidateStart = 0, lastSpoken = '', lastSignSeen = 0;
+        var lastFrameTime = performance.now();
+
+        /* ---------- history ---------- */
+        var recent = [];
+        function addHistory(text) {
+            recent.unshift(text); recent = recent.slice(0, 8);
+            historyEl.innerHTML = '';
+            recent.forEach(function (t) { var c = document.createElement('span'); c.className = 'chip'; c.textContent = t; historyEl.appendChild(c); });
+        }
+        $('clearHistory').addEventListener('click', function () { recent = []; historyEl.innerHTML = '<span class="empty">Nothing yet</span>'; });
+
+        /* ---------- MediaPipe ---------- */
+        var hands = new Hands({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + f; } });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+        function drawLabel(text, x, y) {
+            ctx.save();
+            ctx.font = 'bold 16px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            var w = ctx.measureText(text).width, bx = x - w / 2 - 12, by = y - 55, bw = w + 24, bh = 32;
+            ctx.fillStyle = 'rgba(22,22,25,.9)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 8); else ctx.rect(bx, by, bw, bh);
+            ctx.fill();
+            ctx.strokeStyle = '#0a84ff'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.fillStyle = '#0a84ff';
+            ctx.fillText(text, x, y - 33);
+            ctx.restore();
+        }
+
+        hands.onResults(function (results) {
+            var now = performance.now();
+            fpsBadge.textContent = Math.round(1000 / Math.max(1, now - lastFrameTime)) + ' FPS';
+            lastFrameTime = now;
+
+            if (results.image.width && canvas.width !== results.image.width) {
+                canvas.width = results.image.width; canvas.height = results.image.height;
+            }
+            var w = canvas.width, h = canvas.height;
+
+            ctx.save();
+            ctx.clearRect(0, 0, w, h);
+            if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+            ctx.drawImage(results.image, 0, 0, w, h);
+            var multi = results.multiHandLandmarks || [];
+            multi.forEach(function (lm, i) {
+                drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: i === 0 ? '#0a84ff' : '#af52de', lineWidth: 3 });
+            });
+            ctx.restore(); // labels are drawn un-mirrored so text stays readable
+
+            var sign = '';
+            if (multi.length) {
+                if (model) sign = ISL.predict(model, ISL.extractFeatures(multi)).label;
+                else sign = ISL.ruleClassify(multi);
+            }
+
+            if (sign && multi[0]) {
+                var x = (mirror ? 1 - multi[0][0].x : multi[0][0].x) * w, y = multi[0][0].y * h;
+                drawLabel(ISL.textFor(sign, currentLang, model), x, y);
+            }
+
+            if (sign) {
+                lastSignSeen = now;
+                if (sign === currentCandidate) {
+                    var elapsed = now - candidateStart;
+                    holdBarFill.style.width = Math.min(100, Math.round(elapsed / REQUIRED_HOLD_MS * 100)) + '%';
+                    if (elapsed >= REQUIRED_HOLD_MS) {
+                        var text = ISL.textFor(sign, currentLang, model);
+                        translationText.textContent = text;
+                        if (lastSpoken !== sign) {
+                            if (voiceOn) ISL.speak(text, currentLang);
+                            addHistory(text);
+                            lastSpoken = sign;
+                        }
+                    }
+                } else { currentCandidate = sign; candidateStart = now; holdBarFill.style.width = '0%'; }
+            } else {
+                currentCandidate = ''; candidateStart = 0; holdBarFill.style.width = '0%';
+                if (now - lastSignSeen > 700) lastSpoken = ''; // lets you repeat the same sign after lowering your hand
+            }
+        });
+
+        async function processLoop() {
+            if (!isRunning) return;
+            try { if (video.readyState >= 2) await hands.send({ image: video }); } catch (e) { /* ignore a dropped frame */ }
+            requestAnimationFrame(processLoop);
+        }
+
+        /* ---------- camera ---------- */
+        async function startCamera() {
+            if (isRunning) return;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                notice.textContent = 'Camera is not available here. Open this page over https:// (for example your GitHub Pages link).';
+                return;
+            }
+            if (voiceOn && !stream) ISL.speak(ISL.WELCOME[currentLang] || ISL.WELCOME.en, currentLang);
+            startBtn.disabled = true; startBtn.textContent = 'Loading AI…';
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+                mirror = (facing === 'user');
+                video.srcObject = stream; await video.play();
+                await hands.initialize();
+                isRunning = true;
+                $('placeholder').classList.add('hidden');
+                statusDot.classList.add('live'); statusLabel.textContent = 'Live AI';
+                startBtn.textContent = 'Stop'; startBtn.classList.add('stop');
+                processLoop();
+            } catch (err) {
+                stopCamera();
+                notice.textContent = (err && err.name === 'NotAllowedError')
+                    ? 'Camera permission was blocked. Allow camera access for this site in your browser settings, then try again.'
+                    : 'Camera error: ' + (err && err.message ? err.message : err);
+            } finally { startBtn.disabled = false; }
+        }
+
+        function stopCamera() {
+            isRunning = false;
+            if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+            stream = null; video.srcObject = null;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            $('placeholder').classList.remove('hidden');
+            statusDot.classList.remove('live'); statusLabel.textContent = 'Camera Off'; fpsBadge.textContent = '0 FPS';
+            startBtn.textContent = 'Start Camera & Audio'; startBtn.classList.remove('stop');
+            holdBarFill.style.width = '0%'; currentCandidate = ''; lastSpoken = '';
+            if ('speechSynthesis' in window) speechSynthesis.cancel();
+        }
+
+        startBtn.addEventListener('click', function () { if (isRunning) stopCamera(); else { notice.textContent = ''; startCamera(); } });
+        flipBtn.addEventListener('click', async function () {
+            facing = (facing === 'user') ? 'environment' : 'user';
+            if (isRunning) { stopCamera(); await startCamera(); }
+        });
+        document.addEventListener('visibilitychange', function () { if (document.hidden && isRunning) stopCamera(); });
+    </script>
+</body>
+</html>

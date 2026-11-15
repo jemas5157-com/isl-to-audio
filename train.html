@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <title>Teach the AI — ISL Trainer</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root { --bg:#000; --card:rgba(22,22,25,.85); --border:rgba(255,255,255,.15); --accent:#0a84ff; --accent-glow:rgba(10,132,255,.4); --green:#30d158; --red:#ff453a; --text:#f5f5f7; --muted:#98989f; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: calc(16px + env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom)); }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        header, .card, .camera-card, .controls { width: 100%; max-width: 430px; }
+        header { display: flex; justify-content: space-between; align-items: center; }
+        a { color: var(--accent); text-decoration: none; font-size: 15px; font-weight: 500; }
+        h1 { font-size: 22px; font-weight: 700; width: 100%; max-width: 430px; }
+        .lead { font-size: 14px; color: var(--muted); line-height: 1.5; width: 100%; max-width: 430px; margin-top: -6px; }
+
+        .camera-card { position: relative; aspect-ratio: 4/3; background: #111; border-radius: 24px; overflow: hidden; border: 1px solid var(--border); }
+        video { display: none; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); font-size: 14px; }
+        .placeholder.hidden { display: none; }
+        .overlay { position: absolute; left: 12px; right: 12px; top: 12px; display: flex; justify-content: space-between; z-index: 5; }
+        .pill { background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.1); padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+        .countdown { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 96px; font-weight: 800; color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,.8); z-index: 6; }
+        .countdown.show { display: flex; }
+        .rec-dot { position: absolute; bottom: 12px; left: 12px; display: none; align-items: center; gap: 6px; z-index: 6; }
+        .rec-dot.show { display: flex; }
+        .rec-dot i { width: 10px; height: 10px; border-radius: 50%; background: var(--red); animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: .2; } }
+
+        button { border: none; border-radius: 14px; font-size: 15px; font-weight: 600; padding: 14px 16px; cursor: pointer; font-family: inherit; transition: transform .15s ease; }
+        button:active { transform: scale(.97); }
+        button:disabled { opacity: .5; }
+        .primary { background: var(--accent); color: #fff; box-shadow: 0 8px 24px var(--accent-glow); }
+        .danger { background: rgba(255,69,58,.15); color: var(--red); border: 1px solid rgba(255,69,58,.35); }
+        .ghost { background: rgba(255,255,255,.08); color: #fff; border: 1px solid var(--border); }
+        .small { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+        .controls { display: flex; gap: 10px; }
+        .controls button { flex: 1; }
+
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .card h2 { font-size: 16px; font-weight: 600; }
+        .step { color: var(--accent); }
+        .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip { background: rgba(255,255,255,.07); border: 1px solid var(--border); color: #fff; border-radius: 999px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+        .chip.sel { background: rgba(10,132,255,.25); border-color: var(--accent); }
+        .chip b { color: var(--green); margin-left: 6px; font-weight: 600; }
+        .chip b.zero { color: var(--muted); }
+        .form { display: none; flex-direction: column; gap: 8px; }
+        .form.open { display: flex; }
+        input[type=text] { background: rgba(255,255,255,.06); border: 1px solid var(--border); color: #fff; padding: 12px; border-radius: 12px; font-size: 15px; width: 100%; }
+        .row { display: flex; gap: 8px; }
+        .row > * { flex: 1; }
+        .stat { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+        .stat:last-child { border-bottom: none; }
+        .stat small { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
+        .good { color: var(--green); } .warn { color: #ffd60a; } .bad { color: var(--red); }
+        .live { text-align: center; padding: 6px 0; }
+        .live .big { font-size: 26px; font-weight: 700; color: var(--accent); min-height: 34px; }
+        #recStatus { font-size: 14px; min-height: 20px; text-align: center; }
+        .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: rgba(44,44,46,.97); color: #fff; padding: 12px 18px; border-radius: 14px; font-size: 14px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 2000; border: 1px solid var(--border); max-width: 90vw; text-align: center; }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="index.html">← Home</a>
+        <a href="translate.html">Open translator →</a>
+    </header>
+
+    <h1>Teach the AI</h1>
+    <p class="lead">Record each sign a few times. Training happens on your phone and is free. When you are happy, download <strong>model.json</strong> and upload it to your GitHub site.</p>
+
+    <div class="camera-card">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output_canvas"></canvas>
+        <div class="placeholder" id="placeholder">Tap “Start camera” below</div>
+        <div class="overlay"><div class="pill" id="statusPill">Camera off</div><div class="pill" id="handsPill">0 hands</div></div>
+        <div class="countdown" id="countdown">3</div>
+        <div class="rec-dot" id="recDot"><i></i><span class="pill">Recording</span></div>
+    </div>
+
+    <div class="controls">
+        <button class="primary" id="startBtn">Start camera</button>
+        <button class="ghost" id="flipBtn" style="flex:0 0 56px" aria-label="Switch camera">🔄</button>
+    </div>
+
+    <div class="card">
+        <h2><span class="step">1.</span> Pick a sign</h2>
+        <div class="chips" id="chips"></div>
+        <div class="row">
+            <button class="ghost small" id="addBtn">+ New sign</button>
+            <button class="danger small" id="delBtn">Delete selected</button>
+        </div>
+        <div class="form" id="addForm">
+            <input type="text" id="nName" placeholder="Name, e.g. Water" maxlength="30" />
+            <input type="text" id="nEn" placeholder="English words to speak (optional)" maxlength="80" />
+            <input type="text" id="nHi" placeholder="हिंदी (optional)" maxlength="80" />
+            <input type="text" id="nPa" placeholder="ਪੰਜਾਬੀ (optional)" maxlength="80" />
+            <div class="row"><button class="primary small" id="saveSignBtn">Add sign</button><button class="ghost small" id="cancelSignBtn">Cancel</button></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2><span class="step">2.</span> Record</h2>
+        <button class="primary" id="recBtn">Record “<span id="selName">…</span>” (3 seconds)</button>
+        <div id="recStatus" class="muted">Start the camera, pick a sign, then tap Record. Make the sign when the countdown ends.</div>
+        <div class="muted">For good accuracy: record each sign <strong>at least 3 times</strong>, slightly changing distance, angle and hand position each time. Ask other people to record too. Use the same camera (front or back) here and in the translator.</div>
+    </div>
+
+    <div class="card">
+        <h2><span class="step">3.</span> Check results</h2>
+        <div id="stats"></div>
+        <button class="ghost" id="evalBtn">Train &amp; check accuracy</button>
+        <div class="live"><div class="muted">Live test (show a sign to the camera)</div><div class="big" id="liveOut">—</div></div>
+    </div>
+
+    <div class="card">
+        <h2><span class="step">4.</span> Save &amp; publish</h2>
+        <div class="muted" id="saveInfo">Your recordings are saved automatically on this phone.</div>
+        <button class="primary" id="dlBtn">Download model.json</button>
+        <div class="row">
+            <button class="ghost" id="importBtn">Import model.json</button>
+            <button class="danger" id="resetBtn">Reset everything</button>
+        </div>
+        <input type="file" id="importFile" accept=".json,application/json" style="display:none" />
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="isl-core.js"></script>
+    <script>
+        ISL.registerSW();
+        var $ = function (id) { return document.getElementById(id); };
+        var video = $('webcam'), canvas = $('output_canvas'), ctx = canvas.getContext('2d');
+
+        var model = ISL.loadModel() || ISL.emptyModel();
+        var selected = model.labels[0] || '';
+        var nextSession = 1, i;
+        for (i = 0; i < model.samples.length; i++) nextSession = Math.max(nextSession, (model.samples[i].s || 0) + 1);
+
+        var isRunning = false, stream = null, facing = 'user', mirror = true;
+        var recording = false, currentSession = 0, recCount = 0, lastPush = 0, lastFeatures = null;
+        var MAX_PER_LABEL = 400;
+
+        function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+        var toastTimer;
+        function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2800); }
+
+        function persist() {
+            var ok = ISL.saveModel(model);
+            $('saveInfo').textContent = ok ? 'Saved on this phone · ' + model.samples.length + ' recordings. Download model.json to publish it.' : 'Could not save on this phone (storage full or private mode). Download model.json now so you do not lose your work.';
+        }
+
+        /* ---------- labels ---------- */
+        function counts() {
+            var c = {}, s = {};
+            model.labels.forEach(function (l) { c[l] = 0; s[l] = {}; });
+            model.samples.forEach(function (x) { if (c[x.l] !== undefined) { c[x.l]++; s[x.l][x.s] = 1; } });
+            return { c: c, s: s };
+        }
+        function renderChips() {
+            var k = counts(), box = $('chips'); box.innerHTML = '';
+            model.labels.forEach(function (l) {
+                var b = document.createElement('button');
+                b.className = 'chip' + (l === selected ? ' sel' : '');
+                b.textContent = l;
+                var n = document.createElement('b'); n.textContent = k.c[l]; if (!k.c[l]) n.className = 'zero';
+                b.appendChild(n);
+                b.addEventListener('click', function () { selected = l; renderChips(); });
+                box.appendChild(b);
+            });
+            $('selName').textContent = selected || '…';
+            renderStats();
+        }
+        function renderStats(evalRes) {
+            var k = counts(), el = $('stats'); el.innerHTML = '';
+            model.labels.forEach(function (l) {
+                var n = k.c[l], sess = Object.keys(k.s[l]).length, msg = '', cls = '';
+                if (!n) { msg = 'No recordings yet'; cls = 'bad'; }
+                else if (sess < 3) { msg = 'Record ' + (3 - sess) + ' more time' + (3 - sess > 1 ? 's' : '') + ' for reliable results'; cls = 'warn'; }
+                else { msg = sess + ' recordings'; cls = 'good'; }
+                var right = '';
+                if (evalRes && evalRes.perLabel[l] && evalRes.perLabel[l].tot) right = Math.round(100 * evalRes.perLabel[l].ok / evalRes.perLabel[l].tot) + '%';
+                var row = document.createElement('div'); row.className = 'stat';
+                var left = document.createElement('div'); left.textContent = l;
+                var sm = document.createElement('small'); sm.className = cls; sm.textContent = n + ' frames · ' + msg; left.appendChild(sm);
+                var r = document.createElement('div'); r.textContent = right; r.className = 'good';
+                row.appendChild(left); row.appendChild(r); el.appendChild(row);
+            });
+        }
+
+        $('addBtn').addEventListener('click', function () { $('addForm').classList.add('open'); $('nName').focus(); });
+        $('cancelSignBtn').addEventListener('click', function () { $('addForm').classList.remove('open'); });
+        $('saveSignBtn').addEventListener('click', function () {
+            var name = $('nName').value.trim();
+            if (!name) return toast('Type a name for the sign');
+            if (model.labels.indexOf(name) !== -1) return toast('That sign already exists');
+            model.labels.push(name);
+            model.dict[name] = { en: $('nEn').value.trim() || name, hi: $('nHi').value.trim(), pa: $('nPa').value.trim() };
+            selected = name;
+            ['nName', 'nEn', 'nHi', 'nPa'].forEach(function (id) { $(id).value = ''; });
+            $('addForm').classList.remove('open');
+            persist(); renderChips(); toast('Added “' + name + '”');
+        });
+        $('delBtn').addEventListener('click', function () {
+            if (!selected) return;
+            if (!confirm('Delete “' + selected + '” and all its recordings?')) return;
+            model.labels = model.labels.filter(function (l) { return l !== selected; });
+            model.samples = model.samples.filter(function (x) { return x.l !== selected; });
+            delete model.dict[selected];
+            selected = model.labels[0] || '';
+            persist(); renderChips();
+        });
+
+        /* ---------- MediaPipe ---------- */
+        var hands = new Hands({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + f; } });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+        hands.onResults(function (results) {
+            if (results.image.width && canvas.width !== results.image.width) { canvas.width = results.image.width; canvas.height = results.image.height; }
+            var w = canvas.width, h = canvas.height, multi = results.multiHandLandmarks || [];
+            ctx.save(); ctx.clearRect(0, 0, w, h);
+            if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+            ctx.drawImage(results.image, 0, 0, w, h);
+            multi.forEach(function (lm, idx) { drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: idx === 0 ? '#0a84ff' : '#af52de', lineWidth: 3 }); });
+            ctx.restore();
+            $('handsPill').textContent = multi.length + (multi.length === 1 ? ' hand' : ' hands');
+
+            lastFeatures = multi.length ? ISL.extractFeatures(multi) : null;
+
+            if (recording && lastFeatures) {
+                var now = performance.now();
+                if (now - lastPush >= 90) {
+                    lastPush = now; recCount++;
+                    model.samples.push({ l: selected, s: currentSession, f: lastFeatures.map(function (v) { return Math.round(v * 1000) / 1000; }) });
+                }
+            }
+
+            var out = '—';
+            if (lastFeatures && model.samples.length) {
+                var p = ISL.predict(model, lastFeatures);
+                out = p.label ? p.label + ' (' + Math.round(p.confidence * 100) + '%)' : 'Unknown';
+            }
+            $('liveOut').textContent = out;
+        });
+
+        async function loop() {
+            if (!isRunning) return;
+            try { if (video.readyState >= 2) await hands.send({ image: video }); } catch (e) {}
+            requestAnimationFrame(loop);
+        }
+
+        async function startCamera() {
+            if (isRunning) return;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Camera needs https:// (use your GitHub Pages link).'); return; }
+            $('startBtn').disabled = true; $('startBtn').textContent = 'Loading AI…';
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+                mirror = (facing === 'user');
+                video.srcObject = stream; await video.play(); await hands.initialize();
+                isRunning = true; $('placeholder').classList.add('hidden'); $('statusPill').textContent = 'Camera live';
+                $('startBtn').textContent = 'Stop camera'; loop();
+            } catch (err) {
+                stopCamera();
+                toast(err && err.name === 'NotAllowedError' ? 'Camera permission blocked — allow it in browser settings.' : 'Camera error: ' + (err && err.message || err));
+            } finally { $('startBtn').disabled = false; }
+        }
+        function stopCamera() {
+            isRunning = false; recording = false;
+            if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+            stream = null; video.srcObject = null; ctx.clearRect(0, 0, canvas.width, canvas.height);
+            $('placeholder').classList.remove('hidden'); $('statusPill').textContent = 'Camera off'; $('handsPill').textContent = '0 hands';
+            $('startBtn').textContent = 'Start camera';
+        }
+        $('startBtn').addEventListener('click', function () { if (isRunning) stopCamera(); else startCamera(); });
+        $('flipBtn').addEventListener('click', async function () { facing = facing === 'user' ? 'environment' : 'user'; if (isRunning) { stopCamera(); await startCamera(); } });
+        document.addEventListener('visibilitychange', function () { if (document.hidden && isRunning) stopCamera(); });
+
+        /* ---------- recording ---------- */
+        $('recBtn').addEventListener('click', async function () {
+            if (recording) return;
+            if (!isRunning) return toast('Start the camera first');
+            if (!selected) return toast('Add or pick a sign first');
+            var have = model.samples.filter(function (x) { return x.l === selected; }).length;
+            if (have >= MAX_PER_LABEL) return toast('Enough recordings for this sign (' + MAX_PER_LABEL + ' frames).');
+
+            var btn = $('recBtn'), cd = $('countdown'), st = $('recStatus');
+            btn.disabled = true;
+            for (var c = 3; c > 0; c--) { cd.textContent = c; cd.classList.add('show'); st.textContent = 'Get ready to sign “' + selected + '”…'; await sleep(1000); }
+            cd.classList.remove('show');
+
+            currentSession = nextSession++; recCount = 0; lastPush = 0; recording = true;
+            $('recDot').classList.add('show'); st.textContent = 'Recording… keep signing, move your hand slightly.';
+            await sleep(3000);
+            recording = false; $('recDot').classList.remove('show');
+            btn.disabled = false;
+
+            if (recCount < 8) {
+                model.samples = model.samples.filter(function (x) { return x.s !== currentSession; });
+                st.textContent = 'Your hand was barely visible, so nothing was kept. Try again with better light and your whole hand in view.';
+            } else {
+                st.textContent = 'Saved ' + recCount + ' frames. Record again with a slightly different position.';
+                persist();
+            }
+            renderChips();
+        });
+
+        /* ---------- train / evaluate ---------- */
+        $('evalBtn').addEventListener('click', async function () {
+            if (model.samples.length < 20) return toast('Record some signs first');
+            var btn = this; btn.disabled = true; btn.textContent = 'Checking…';
+            await sleep(30);
+            var res = ISL.evaluate(model);
+            model.threshold = res.threshold;
+            persist(); renderStats(res);
+            btn.disabled = false; btn.textContent = 'Train & check accuracy';
+            toast(res.overall === null ? 'Record each sign at least twice to measure accuracy' : 'Overall accuracy: ' + Math.round(res.overall * 100) + '%');
+        });
+
+        /* ---------- export / import / reset ---------- */
+        $('dlBtn').addEventListener('click', function () {
+            if (!model.samples.length) return toast('Nothing to download yet — record some signs first');
+            if (!model.threshold || model.threshold === 1.2) { var r = ISL.evaluate(model); model.threshold = r.threshold; persist(); }
+            var blob = new Blob([JSON.stringify(model)], { type: 'application/json' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = 'model.json';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+            toast('model.json downloaded — upload it to your GitHub repo');
+        });
+        $('importBtn').addEventListener('click', function () { $('importFile').click(); });
+        $('importFile').addEventListener('change', function () {
+            var f = this.files[0]; if (!f) return;
+            var rd = new FileReader();
+            rd.onload = function () {
+                try {
+                    var m = JSON.parse(rd.result);
+                    if (!ISL.validModel(m)) throw new Error('bad');
+                    if (!confirm('Replace your current recordings with this file?')) return;
+                    model = m; selected = model.labels[0] || ''; nextSession = 1;
+                    model.samples.forEach(function (x) { nextSession = Math.max(nextSession, (x.s || 0) + 1); });
+                    persist(); renderChips(); toast('Imported ' + model.samples.length + ' recordings');
+                } catch (e) { toast('That file is not a valid model.json'); }
+            };
+            rd.readAsText(f); this.value = '';
+        });
+        $('resetBtn').addEventListener('click', function () {
+            if (!confirm('Delete ALL recordings and custom signs on this phone?')) return;
+            ISL.clearModel(); model = ISL.emptyModel(); selected = model.labels[0]; nextSession = 1;
+            persist(); renderChips(); toast('Reset');
+        });
+
+        renderChips(); persist();
+    </script>
+</body>
+</html>
