@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ISL.AI.com — Live AI Translator</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #060d1f 0%, #0b1938 50%, #060d1f 100%);
+      --glass-bg: rgba(255, 255, 255, 0.06);
+      --glass-border: rgba(255, 255, 255, 0.14);
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.45);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding-top: 68px;
+      padding-bottom: 40px;
+      overflow-x: hidden;
+    }
+
+    /* Compact Fixed Top Navigation Bar */
+    .top-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 54px;
+      background: rgba(8, 16, 36, 0.85);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      z-index: 1000;
+    }
+
+    .brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #60a5fa;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+    }
+
+    .nav-btn {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 9px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn.active {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 2px 10px var(--accent-glow);
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .glass-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    .status-pill {
+      display: inline-block;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      color: #6ee7b7;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+
+    .video-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #030712;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--glass-border);
+      margin-bottom: 14px;
+    }
+
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    button, select {
+      width: 100%;
+      padding: 13px;
+      border-radius: 14px;
+      border: 1px solid var(--glass-border);
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #f8fafc;
+    }
+
+    select {
+      background: #0f172a;
+      color: #f8fafc;
+      grid-column: span 2;
+    }
+
+    .output-box {
+      text-align: center;
+      padding: 18px;
+    }
+
+    .output-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .recognized-text {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: #60a5fa;
+    }
+
+    .swipe-hint {
+      text-align: center;
+      font-size: 0.78rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sleek Fixed Top Bar -->
+  <nav class="top-nav">
+    <div class="brand">ISL.AI.com</div>
+    <div class="nav-buttons">
+      <a href="index.html" class="nav-btn">Home</a>
+      <a href="translate.html" class="nav-btn active">Live AI Translator</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="glass-card">
+      <div class="status-pill" id="statusText">Camera Ready • 0.89s Trigger</div>
+      <h2 style="font-size: 1.2rem; margin-bottom: 12px;">🎙️ Live ISL to Audio Engine</h2>
+
+      <div class="video-box">
+        <video id="inputVideo" playsinline></video>
+        <canvas id="outputCanvas"></canvas>
+      </div>
+
+      <div class="controls">
+        <button class="btn-primary" id="startBtn">▶ Start Camera</button>
+        <button class="btn-secondary" id="flipBtn">🔄 Switch Camera</button>
+        <select id="langSelect">
+          <option value="en-IN">English (India)</option>
+          <option value="hi-IN">Hindi (हिन्दी)</option>
+          <option value="pa-IN">Punjabi (ਪੰਜਾਬੀ)</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="glass-card output-box">
+      <div class="output-label">Recognized Sign</div>
+      <div class="recognized-text" id="signOutput">Waiting for hand sign...</div>
+    </section>
+
+    <div class="swipe-hint">👉 Swipe right anywhere to go back to Home</div>
+  </main>
+
+  <script>
+    const videoEl = document.getElementById('inputVideo');
+    const canvasEl = document.getElementById('outputCanvas');
+    const canvasCtx = canvasEl.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const flipBtn = document.getElementById('flipBtn');
+    const langSelect = document.getElementById('langSelect');
+    const signOutput = document.getElementById('signOutput');
+    const statusText = document.getElementById('statusText');
+
+    let facingMode = 'user';
+    let currentStream = null;
+    let isRunning = false;
+
+    let candidateSign = '';
+    let holdStartTime = 0;
+    let lastSpokenSign = '';
+    const TRIGGER_DELAY_MS = 890;
+
+    const translations = {
+      'HELLO': { 'en-IN': 'Hello', 'hi-IN': 'नमस्ते', 'pa-IN': 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ' },
+      'THANK YOU': { 'en-IN': 'Thank you', 'hi-IN': 'धन्यवाद', 'pa-IN': 'ਧੰਨਵਾਦ' },
+      'YES': { 'en-IN': 'Yes', 'hi-IN': 'हाँ', 'pa-IN': 'ਹਾਂ' },
+      'NO': { 'en-IN': 'No', 'hi-IN': 'नहीं', 'pa-IN': 'ਨਹੀਂ' },
+      'HELP': { 'en-IN': 'Please help me', 'hi-IN': 'कृपया मेरी मदद करें', 'pa-IN': 'ਕਿਰਪਾ ਕਰਕੇ ਮੇਰੀ ਮਦਦ ਕਰੋ' }
+    };
+
+    function speakText(key) {
+      const lang = langSelect.value;
+      const text = (translations[key] && translations[key][lang]) || key;
+      signOutput.textContent = text;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function detectGesture(landmarks) {
+      const thumbOpen = landmarks[4].x < landmarks[3].x;
+      const indexOpen = landmarks[8].y < landmarks[6].y;
+      const middleOpen = landmarks[12].y < landmarks[10].y;
+      const ringOpen = landmarks[16].y < landmarks[14].y;
+      const pinkyOpen = landmarks[20].y < landmarks[18].y;
+
+      const openCount = [indexOpen, middleOpen, ringOpen, pinkyOpen].filter(Boolean).length;
+
+      if (openCount === 4) return 'HELLO';
+      if (openCount === 0 && !thumbOpen) return 'YES';
+      if (openCount === 1 && indexOpen) return 'NO';
+      if (openCount === 2 && indexOpen && middleOpen) return 'THANK YOU';
+      if (openCount === 3 && indexOpen && middleOpen && ringOpen) return 'HELP';
+      return '';
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.65,
+      minTrackingConfidence: 0.65
+    });
+
+    hands.onResults((results) => {
+      canvasEl.width = videoEl.videoWidth;
+      canvasEl.height = videoEl.videoHeight;
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#38bdf8', lineWidth: 3 });
+          drawLandmarks(canvasCtx, landmarks, { color: '#ffffff', lineWidth: 1, radius: 3 });
+        }
+
+        const detected = detectGesture(results.multiHandLandmarks[0]);
+        if (detected) {
+          if (detected !== candidateSign) {
+            candidateSign = detected;
+            holdStartTime = performance.now();
+          } else if (performance.now() - holdStartTime >= TRIGGER_DELAY_MS && detected !== lastSpokenSign) {
+            lastSpokenSign = detected;
+            speakText(detected);
+          }
+        }
+      } else {
+        // Reset anti-repetition lock when hand is lowered
+        candidateSign = '';
+        lastSpokenSign = '';
+      }
+      canvasCtx.restore();
+    });
+
+    async function startCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+      }
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode }
+      });
+      videoEl.srcObject = currentStream;
+      await videoEl.play();
+      isRunning = true;
+      statusText.textContent = 'Tracking Active • 0.89s Trigger';
+
+      async function frameLoop() {
+        if (!isRunning) return;
+        await hands.send({ image: videoEl });
+        requestAnimationFrame(frameLoop);
+      }
+      frameLoop();
+    }
+
+    startBtn.addEventListener('click', startCamera);
+    flipBtn.addEventListener('click', () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      if (isRunning) startCamera();
+    });
+
+    /* Swipe Right to Return Home */
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      const touchEndX = e.changedTouches[0].screenX;
+      const touchEndY = e.changedTouches[0].screenY;
+      const diffX = touchEndX - touchStartX;
+      const diffY = touchEndY - touchStartY;
+
+      if (Math.abs(diffX) > 75 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+        if (diffX > 0) {
+          // Swiped right -> Go back to Home
+          window.location.href = 'index.html';
+        }
+      }
+    }, { passive: true });
+  </script>
+</body>
+</html>
